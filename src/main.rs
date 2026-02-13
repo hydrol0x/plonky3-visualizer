@@ -1,15 +1,16 @@
-use graphviz_rust::{dot_generator, dot_structures};
-// Code courtesy of https://github.com/BrianSeong99/Plonky3_Fibonacci.git
+// Fib Constraints Code courtesy of https://github.com/BrianSeong99/Plonky3_Fibonacci.git
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_field::{Field, PrimeCharacteristicRing};
 use p3_matrix::dense::RowMajorMatrix;
 use p3_matrix::Matrix;
 use p3_mersenne_31::Mersenne31;
-use p3_uni_stark::{get_symbolic_constraints, Entry, SymbolicExpression, SymbolicVariable};
+use p3_uni_stark::get_symbolic_constraints;
 use std::fs;
+use std::io::ErrorKind;
+use std::process::Command;
 
 mod visualizer;
-use visualizer::build_dotviz_graph;
+use visualizer::build_constraints_graph;
 
 pub struct FibonacciAir {
     pub num_steps: usize,
@@ -59,18 +60,57 @@ pub fn generate_fibonacci_trace<F: Field>(num_steps: usize) -> RowMajorMatrix<F>
 }
 
 fn main() {
-    let num_steps = 8; // Choose the number of Fibonacci steps
-    let final_value = 21; // Choose the final Fibonacci value
+    let num_steps = 8;
+    let final_value = 21;
     let air = FibonacciAir {
         num_steps,
         final_value,
     };
 
     type Val = Mersenne31;
+    // Assuming get_symbolic_constraints and visualizer exist in your context
     let constraints = get_symbolic_constraints::<Val, FibonacciAir>(&air, 2, 0);
 
     let dotgraph = visualizer::build_constraints_graph(&constraints);
     println!("{}", dotgraph);
 
-    fs::write("./constraints.gv", dotgraph).expect("File write should work.");
+    let filename_gv = "./constraints.gv";
+    let filename_svg = "./constraints.svg";
+
+    fs::write(filename_gv, dotgraph).expect("Failed to write graph file.");
+
+    println!("Graph content written to {}", filename_gv);
+
+    println!("Attempting to compile to {}...", filename_svg);
+
+    let output_result = Command::new("dot")
+        .arg("-Tsvg")
+        .arg(filename_gv)
+        .arg("-o")
+        .arg(filename_svg)
+        .output();
+
+    match output_result {
+        Ok(output) => {
+            if output.status.success() {
+                println!("Successfully compiled graph to {}", filename_svg);
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                eprintln!("Error: 'dot' command failed with status: {}", output.status);
+                eprintln!("Graphviz Error Output:\n{}", stderr);
+            }
+        }
+        Err(e) => {
+            if e.kind() == ErrorKind::NotFound {
+                eprintln!("Error: 'dot' command not found.");
+                eprintln!(
+                    "Please install Graphviz (https://graphviz.org/download/) to generate SVGs."
+                );
+                eprintln!("  - MacOS: brew install graphviz");
+                eprintln!("  - Ubuntu: sudo apt install graphviz");
+            } else {
+                eprintln!("Error: Failed to execute 'dot': {}", e);
+            }
+        }
+    }
 }
