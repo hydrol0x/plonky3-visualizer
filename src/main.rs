@@ -27,7 +27,7 @@ impl<AB: AirBuilder> Air<AB> for FibonacciAir {
 
         // Enforce starting values
         builder.when_first_row().assert_eq(local[0], AB::Expr::ZERO);
-        // builder.when_first_row().assert_eq(local[1], AB::Expr::ONE);
+        builder.when_first_row().assert_eq(local[1], AB::Expr::ONE);
 
         // Enforce state transition constraints
         // builder.when_transition().assert_eq(next[0], local[1]);
@@ -134,17 +134,27 @@ fn build_dotviz_graph<F: Field>(
     }
 }
 
-// fn build_constraints_graph<F: Field>(constraints: &Vec<SymbolicExpression<F>>) {
-//     let mut i = 0;
-//     let mut output = String::new();
-//     constraints.iter().for_each(|constraint| {
-//         let parent_string = format!("Constraint {i}");
-//         let mut constraint_output = String::new();
-//         build_dotviz_graph(constraint, Some(&parent_string), &mut constraint_output);
-//         i += 1;
-//         output.push_str(&constraint_output)
-//     });
-// }
+fn build_constraints_graph<F: Field>(constraints: &Vec<SymbolicExpression<F>>) -> String {
+    let mut counter = 0;
+    let mut constraint_count = 1;
+    let mut output = String::new();
+    constraints.iter().for_each(|constraint| {
+        let parent_string = format!("Constraint {constraint_count}");
+        output.push_str(&format!("node_{counter} [label=\"{parent_string}\"]\n"));
+        let parent_count = counter;
+        let mut constraint_output = String::new();
+        counter += 1;
+        build_dotviz_graph(
+            constraint,
+            Some(parent_count),
+            &mut constraint_output,
+            &mut counter,
+        );
+        output.push_str(&constraint_output);
+        constraint_count += 1;
+    });
+    output
+}
 
 fn main() {
     let num_steps = 8; // Choose the number of Fibonacci steps
@@ -158,9 +168,10 @@ fn main() {
     let constraints = get_symbolic_constraints::<Val, FibonacciAir>(&air, 2, 0);
 
     let mut output_string = String::new();
-    let mut counter = 0;
-    build_dotviz_graph(&constraints[0], None, &mut output_string, &mut counter);
-    println!("{}", output_string);
+    // build_dotviz_graph(&constraints[0], None, &mut output_string, &mut counter);
+    // println!("{}", output_string);
+    let dotgraph = build_constraints_graph(&constraints);
+    println!("{}", dotgraph);
 
     fs::write("./constraints.gv", output_string).expect("File write should work.");
     // verify(&config, &air, &proof, &vec![])
