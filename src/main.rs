@@ -5,7 +5,7 @@ use p3_matrix::dense::RowMajorMatrix;
 use p3_matrix::Matrix;
 use p3_mersenne_31::Mersenne31;
 use p3_uni_stark::{get_symbolic_constraints, SymbolicExpression, SymbolicVariable};
-
+use std::fs;
 mod visualizer;
 
 pub struct FibonacciAir {
@@ -191,5 +191,6 @@ fn main() {
     traverse_constraints_tree(&constraints[0], None, &mut output_string);
     println!("{}", output_string);
 
+    fs::write("./constraints.gv", output_string).expect("File write should work.");
     // verify(&config, &air, &proof, &vec![])
 }
