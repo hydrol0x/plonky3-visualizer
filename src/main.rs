@@ -6,7 +6,6 @@ use p3_matrix::Matrix;
 use p3_mersenne_31::Mersenne31;
 use p3_uni_stark::{get_symbolic_constraints, SymbolicExpression, SymbolicVariable};
 use std::fs;
-mod visualizer;
 
 pub struct FibonacciAir {
     pub num_steps: usize,
