@@ -79,7 +79,7 @@ fn traverse_constraints_tree<F: Field>(
 
                 output.push_str(
                     format!(
-                        "\"{}\" -> \"{}\"",
+                        "\"{}\" -> \"{}\"\n",
                         parent_string.unwrap_or(&String::default()),
                         entry_text
                     )
@@ -89,28 +89,28 @@ fn traverse_constraints_tree<F: Field>(
         },
         SymbolicExpression::IsFirstRow => output.push_str(
             format!(
-                "\"{}\" -> \"IsFirstRow\"",
+                "\"{}\" -> \"IsFirstRow\"\n",
                 parent_string.unwrap_or(&String::default()),
             )
             .as_str(),
         ),
         SymbolicExpression::IsLastRow => output.push_str(
             format!(
-                "\"{}\" -> \"IsLastRow\"",
+                "\"{}\" -> \"IsLastRow\"\n",
                 parent_string.unwrap_or(&String::default()),
             )
             .as_str(),
         ),
         SymbolicExpression::IsTransition => output.push_str(
             format!(
-                "\"{}\" -> \"IsTransition\"",
+                "\"{}\" -> \"IsTransition\"\n",
                 parent_string.unwrap_or(&String::default()),
             )
             .as_str(),
         ),
         SymbolicExpression::Constant(c) => output.push_str(
             format!(
-                "\"{}\" -> \"Const({})\"",
+                "\"{}\" -> \"Const({})\"\n",
                 parent_string.unwrap_or(&String::default()),
                 c
             )
@@ -123,7 +123,7 @@ fn traverse_constraints_tree<F: Field>(
         } => {
             output.push_str(
                 format!(
-                    "\"{}\" -> \"Mul\"",
+                    "\"{}\" -> \"Mul\"\n",
                     parent_string.unwrap_or(&String::default()),
                 )
                 .as_str(),
@@ -135,13 +135,42 @@ fn traverse_constraints_tree<F: Field>(
             x,
             y,
             degree_multiple,
-        } => {}
+        } => {
+            output.push_str(
+                format!(
+                    "\"{}\" -> \"Sub\"\n",
+                    parent_string.unwrap_or(&String::default()),
+                )
+                .as_str(),
+            );
+            traverse_constraints_tree(x, Some(&String::from("Sub")), output);
+            traverse_constraints_tree(y, Some(&String::from("Sub")), output);
+        }
         SymbolicExpression::Add {
             x,
             y,
             degree_multiple,
-        } => {}
-        SymbolicExpression::Neg { x, degree_multiple } => {}
+        } => {
+            output.push_str(
+                format!(
+                    "\"{}\" -> \"Add\"\n",
+                    parent_string.unwrap_or(&String::default()),
+                )
+                .as_str(),
+            );
+            traverse_constraints_tree(x, Some(&String::from("Sub")), output);
+            traverse_constraints_tree(y, Some(&String::from("Sub")), output);
+        }
+        SymbolicExpression::Neg { x, degree_multiple } => {
+            output.push_str(
+                format!(
+                    "\"{}\" -> \"Neg\"\n",
+                    parent_string.unwrap_or(&String::default()),
+                )
+                .as_str(),
+            );
+            traverse_constraints_tree(x, Some(&String::from("Neg")), output);
+        }
     }
 }
 
@@ -156,38 +185,11 @@ fn main() {
     type Val = Mersenne31;
     let constraints = get_symbolic_constraints::<Val, FibonacciAir>(&air, 2, 0);
 
-    let mut n = 1;
-    let k = constraints.iter().next();
-    let output = constraints.iter().for_each(|constraint| {
-        println!("Constraint {n}: {:#?}\n", constraint);
-
-        match constraint {
-            SymbolicExpression::Variable(v) => match *v {
-                SymbolicVariable { entry, index, .. } => {}
-            },
-            SymbolicExpression::IsFirstRow => {}
-            SymbolicExpression::IsLastRow => {}
-            SymbolicExpression::IsTransition => {}
-            SymbolicExpression::Constant(c) => {}
-            SymbolicExpression::Mul {
-                x,
-                y,
-                degree_multiple,
-            } => {}
-            SymbolicExpression::Sub {
-                x,
-                y,
-                degree_multiple,
-            } => {}
-            SymbolicExpression::Add {
-                x,
-                y,
-                degree_multiple,
-            } => {}
-            SymbolicExpression::Neg { x, degree_multiple } => {}
-        }
-    });
+    // let mut n = 1;
+    // let k = constraints.iter().next();
+    let mut output_string = String::new();
+    traverse_constraints_tree(&constraints[0], None, &mut output_string);
+    println!("{}", output_string);
 
     // verify(&config, &air, &proof, &vec![])
 }
-
