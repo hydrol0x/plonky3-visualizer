@@ -84,8 +84,9 @@ pub fn build_constraints_graph<F: Field>(constraints: &Vec<SymbolicExpression<F>
     let mut counter = 0;
     let mut constraint_count = 1;
     let mut output = String::new();
-    output.push_str("digraph {");
+    output.push_str("digraph {\n");
     constraints.iter().for_each(|constraint| {
+        output.push_str(&format!("subgraph cluster_c{constraint_count} {{\n"));
         let parent_string = format!("Constraint {constraint_count}");
         output.push_str(&format!("node_{counter} [label=\"{parent_string}\"];\n"));
         let parent_count = counter;
@@ -98,6 +99,7 @@ pub fn build_constraints_graph<F: Field>(constraints: &Vec<SymbolicExpression<F>
             &mut counter,
         );
         output.push_str(&constraint_output);
+        output.push_str("}\n");
         constraint_count += 1;
     });
     output.push_str("}");
