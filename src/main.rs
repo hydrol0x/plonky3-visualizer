@@ -1,10 +1,11 @@
+use graphviz_rust::{dot_generator, dot_structures};
 // Code courtesy of https://github.com/BrianSeong99/Plonky3_Fibonacci.git
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_field::{Field, PrimeCharacteristicRing};
 use p3_matrix::dense::RowMajorMatrix;
 use p3_matrix::Matrix;
 use p3_mersenne_31::Mersenne31;
-use p3_uni_stark::{get_symbolic_constraints, SymbolicExpression, SymbolicVariable};
+use p3_uni_stark::{get_symbolic_constraints, Entry, SymbolicExpression, SymbolicVariable};
 use std::fs;
 
 pub struct FibonacciAir {
@@ -54,7 +55,7 @@ pub fn generate_fibonacci_trace<F: Field>(num_steps: usize) -> RowMajorMatrix<F>
     RowMajorMatrix::new(values, 2)
 }
 
-fn traverse_constraints_tree<F: Field>(
+fn build_dotviz_graph<F: Field>(
     root_constraint: &SymbolicExpression<F>,
     parent_string: Option<&String>,
     output: &mut String,
@@ -62,51 +63,74 @@ fn traverse_constraints_tree<F: Field>(
     match root_constraint {
         SymbolicExpression::Variable(v) => match *v {
             SymbolicVariable { entry, index, .. } => {
-                let entry_text: String = match entry {
-                    p3_uni_stark::Entry::Preprocessed { offset } => {
-                        format!("Preprocessed(offset:{}, index:{})", offset, index)
-                    }
-                    p3_uni_stark::Entry::Main { offset } => {
-                        format!("Preprocessed(offset:{}, index:{})", offset, index)
-                    }
-                    p3_uni_stark::Entry::Permutation { offset } => {
-                        format!("Preprocessed(offset:{}, index:{})", offset, index)
-                    }
-                    p3_uni_stark::Entry::Public => String::from("Public"),
-                    p3_uni_stark::Entry::Challenge => String::from("Entry"),
+                let (name, offset_opt) = match entry {
+                    Entry::Preprocessed { offset } => ("Preprocessed", Some(offset)),
+                    Entry::Main { offset } => ("Main", Some(offset)),
+                    Entry::Permutation { offset } => ("Permutation", Some(offset)),
+                    Entry::Public => ("Public", None),
+                    Entry::Challenge => ("Entry", None),
+                };
+
+                let output_string = if let Some(offset) = offset_opt {
+                    format!("{name}(index: {index} offset: {offset})")
+                } else {
+                    format!("{name}(index: {index})")
                 };
 
                 output.push_str(
                     format!(
                         "\"{}\" -> \"{}\"\n",
                         parent_string.unwrap_or(&String::default()),
-                        entry_text
+                        output_string
                     )
                     .as_str(),
                 )
             }
         },
-        SymbolicExpression::IsFirstRow => output.push_str(
-            format!(
-                "\"{}\" -> \"IsFirstRow\"\n",
-                parent_string.unwrap_or(&String::default()),
-            )
-            .as_str(),
-        ),
-        SymbolicExpression::IsLastRow => output.push_str(
-            format!(
-                "\"{}\" -> \"IsLastRow\"\n",
-                parent_string.unwrap_or(&String::default()),
-            )
-            .as_str(),
-        ),
-        SymbolicExpression::IsTransition => output.push_str(
-            format!(
-                "\"{}\" -> \"IsTransition\"\n",
-                parent_string.unwrap_or(&String::default()),
-            )
-            .as_str(),
-        ),
+        bool_expr @ (SymbolicExpression::IsFirstRow
+        | SymbolicExpression::IsLastRow
+        | SymbolicExpression::IsTransition) => {
+            output.push_str(
+                format!(
+                    "\"{}\" -> \"{:?}\"\n",
+                    parent_string.unwrap_or(&String::default()),
+                    bool_expr,
+                )
+                .as_str(),
+            );
+        }
+        binary_expr @ (SymbolicExpression::Mul {
+            x,
+            y,
+            degree_multiple,
+        }
+        | SymbolicExpression::Add {
+            x,
+            y,
+            degree_multiple,
+        }
+        | SymbolicExpression::Sub {
+            x,
+            y,
+            degree_multiple,
+        }) => {
+            let name = match binary_expr {
+                SymbolicExpression::Mul { .. } => "Mul",
+                SymbolicExpression::Add { .. } => "Add",
+                SymbolicExpression::Sub { .. } => "Sub",
+                _ => unreachable!(),
+            };
+            output.push_str(
+                format!(
+                    "\"{}\" -> \"{}\"\n",
+                    parent_string.unwrap_or(&String::default()),
+                    name
+                )
+                .as_str(),
+            );
+            build_dotviz_graph(x, Some(&String::from(name)), output);
+            build_dotviz_graph(y, Some(&String::from(name)), output);
+        }
         SymbolicExpression::Constant(c) => output.push_str(
             format!(
                 "\"{}\" -> \"Const({})\"\n",
@@ -115,51 +139,6 @@ fn traverse_constraints_tree<F: Field>(
             )
             .as_str(),
         ),
-        SymbolicExpression::Mul {
-            x,
-            y,
-            degree_multiple,
-        } => {
-            output.push_str(
-                format!(
-                    "\"{}\" -> \"Mul\"\n",
-                    parent_string.unwrap_or(&String::default()),
-                )
-                .as_str(),
-            );
-            traverse_constraints_tree(x, Some(&String::from("Mul")), output);
-            traverse_constraints_tree(y, Some(&String::from("Mul")), output);
-        }
-        SymbolicExpression::Sub {
-            x,
-            y,
-            degree_multiple,
-        } => {
-            output.push_str(
-                format!(
-                    "\"{}\" -> \"Sub\"\n",
-                    parent_string.unwrap_or(&String::default()),
-                )
-                .as_str(),
-            );
-            traverse_constraints_tree(x, Some(&String::from("Sub")), output);
-            traverse_constraints_tree(y, Some(&String::from("Sub")), output);
-        }
-        SymbolicExpression::Add {
-            x,
-            y,
-            degree_multiple,
-        } => {
-            output.push_str(
-                format!(
-                    "\"{}\" -> \"Add\"\n",
-                    parent_string.unwrap_or(&String::default()),
-                )
-                .as_str(),
-            );
-            traverse_constraints_tree(x, Some(&String::from("Sub")), output);
-            traverse_constraints_tree(y, Some(&String::from("Sub")), output);
-        }
         SymbolicExpression::Neg { x, degree_multiple } => {
             output.push_str(
                 format!(
@@ -168,7 +147,7 @@ fn traverse_constraints_tree<F: Field>(
                 )
                 .as_str(),
             );
-            traverse_constraints_tree(x, Some(&String::from("Neg")), output);
+            build_dotviz_graph(x, Some(&String::from("Neg")), output);
         }
     }
 }
@@ -187,7 +166,7 @@ fn main() {
     // let mut n = 1;
     // let k = constraints.iter().next();
     let mut output_string = String::new();
-    traverse_constraints_tree(&constraints[0], None, &mut output_string);
+    build_dotviz_graph(&constraints[0], None, &mut output_string);
     println!("{}", output_string);
 
     fs::write("./constraints.gv", output_string).expect("File write should work.");
