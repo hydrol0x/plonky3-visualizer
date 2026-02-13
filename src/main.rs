@@ -79,8 +79,9 @@ fn build_dotviz_graph<F: Field>(
 
                 output.push_str(
                     format!(
-                        "\"{}\" -> \"{}\"\n",
+                        "\"{}\" -> \"{}\"\n\"{}\" [shape=\"box\",style=\"filled\",fillcolor=\"lightgreen\"]\n",
                         parent_string.unwrap_or(&String::default()),
+                        output_string,
                         output_string
                     )
                     .as_str(),
@@ -92,8 +93,9 @@ fn build_dotviz_graph<F: Field>(
         | SymbolicExpression::IsTransition) => {
             output.push_str(
                 format!(
-                    "\"{}\" -> \"{:?}\"\n",
+                    "\"{}\" -> \"{:?}\"\n\"{:?}\" [shape=\"box\",style=\"filled\",fillcolor=\"pink\"]\n",
                     parent_string.unwrap_or(&String::default()),
+                    bool_expr,
                     bool_expr,
                 )
                 .as_str(),
@@ -133,8 +135,9 @@ fn build_dotviz_graph<F: Field>(
         }
         SymbolicExpression::Constant(c) => output.push_str(
             format!(
-                "\"{}\" -> \"Const({})\"\n",
+                "\"{}\" -> \"Const({})\"\n\"Const({})\" [shape=\"box\",style=\"filled\",fillcolor=\"lightblue\"]\n",
                 parent_string.unwrap_or(&String::default()),
+                c,
                 c
             )
             .as_str(),
