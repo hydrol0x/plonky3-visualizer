@@ -56,11 +56,15 @@ pub fn generate_fibonacci_trace<F: Field>(num_steps: usize) -> RowMajorMatrix<F>
 }
 
 fn build_dotviz_graph<F: Field>(
-    root_constraint: &SymbolicExpression<F>,
-    parent_string: Option<&String>,
+    node: &SymbolicExpression<F>,
+    parent_id: Option<usize>,
     output: &mut String,
+    counter: &mut usize,
 ) {
-    match root_constraint {
+    let current_id = *counter;
+    *counter += 1;
+
+    let (label, attributes) = match node {
         SymbolicExpression::Variable(v) => match *v {
             SymbolicVariable { entry, index, .. } => {
                 let (name, offset_opt) = match entry {
@@ -71,89 +75,76 @@ fn build_dotviz_graph<F: Field>(
                     Entry::Challenge => ("Entry", None),
                 };
 
-                let output_string = if let Some(offset) = offset_opt {
-                    format!("{name}(index: {index} offset: {offset})")
+                let text = if let Some(offset) = offset_opt {
+                    format!("{name}(idx: {index} off: {offset})")
                 } else {
-                    format!("{name}(index: {index})")
+                    format!("{name}(idx: {index})")
                 };
-
-                output.push_str(
-                    format!(
-                        "\"{}\" -> \"{}\"\n\"{}\" [shape=\"box\",style=\"filled\",fillcolor=\"lightgreen\"]\n",
-                        parent_string.unwrap_or(&String::default()),
-                        output_string,
-                        output_string
-                    )
-                    .as_str(),
+                (
+                    text,
+                    ",shape=\"box\",style=\"filled\",fillcolor=\"lightgreen\"",
                 )
             }
         },
-        bool_expr @ (SymbolicExpression::IsFirstRow
-        | SymbolicExpression::IsLastRow
-        | SymbolicExpression::IsTransition) => {
-            output.push_str(
-                format!(
-                    "\"{}\" -> \"{:?}\"\n\"{:?}\" [shape=\"box\",style=\"filled\",fillcolor=\"pink\"]\n",
-                    parent_string.unwrap_or(&String::default()),
-                    bool_expr,
-                    bool_expr,
-                )
-                .as_str(),
-            );
-        }
-        binary_expr @ (SymbolicExpression::Mul {
-            x,
-            y,
-            degree_multiple,
-        }
-        | SymbolicExpression::Add {
-            x,
-            y,
-            degree_multiple,
-        }
-        | SymbolicExpression::Sub {
-            x,
-            y,
-            degree_multiple,
-        }) => {
-            let name = match binary_expr {
-                SymbolicExpression::Mul { .. } => "Mul",
-                SymbolicExpression::Add { .. } => "Add",
-                SymbolicExpression::Sub { .. } => "Sub",
-                _ => unreachable!(),
-            };
-            output.push_str(
-                format!(
-                    "\"{}\" -> \"{}\"\n",
-                    parent_string.unwrap_or(&String::default()),
-                    name
-                )
-                .as_str(),
-            );
-            build_dotviz_graph(x, Some(&String::from(name)), output);
-            build_dotviz_graph(y, Some(&String::from(name)), output);
-        }
-        SymbolicExpression::Constant(c) => output.push_str(
-            format!(
-                "\"{}\" -> \"Const({})\"\n\"Const({})\" [shape=\"box\",style=\"filled\",fillcolor=\"lightblue\"]\n",
-                parent_string.unwrap_or(&String::default()),
-                c,
-                c
-            )
-            .as_str(),
+        SymbolicExpression::IsFirstRow => (
+            "IsFirstRow".to_string(),
+            ",shape=\"box\",style=\"filled\",fillcolor=\"pink\"",
         ),
-        SymbolicExpression::Neg { x, degree_multiple } => {
-            output.push_str(
-                format!(
-                    "\"{}\" -> \"Neg\"\n",
-                    parent_string.unwrap_or(&String::default()),
-                )
-                .as_str(),
-            );
-            build_dotviz_graph(x, Some(&String::from("Neg")), output);
+        SymbolicExpression::IsLastRow => (
+            "IsLastRow".to_string(),
+            ",shape=\"box\",style=\"filled\",fillcolor=\"pink\"",
+        ),
+        SymbolicExpression::IsTransition => (
+            "IsTransition".to_string(),
+            ",shape=\"box\",style=\"filled\",fillcolor=\"pink\"",
+        ),
+
+        SymbolicExpression::Add { .. } => ("Add".to_string(), ""),
+        SymbolicExpression::Sub { .. } => ("Sub".to_string(), ""),
+        SymbolicExpression::Mul { .. } => ("Mul".to_string(), ""),
+        SymbolicExpression::Neg { .. } => ("Neg".to_string(), ""),
+
+        SymbolicExpression::Constant(c) => (
+            format!("Const({})", c),
+            ",shape=\"box\",style=\"filled\",fillcolor=\"lightblue\"",
+        ),
+    };
+
+    output.push_str(&format!(
+        "node_{} [label=\"{}\"{}];\n",
+        current_id, label, attributes
+    ));
+
+    if let Some(pid) = parent_id {
+        output.push_str(&format!("node_{} -> node_{};\n", pid, current_id));
+    }
+
+    // recurse for nodes with children
+    match node {
+        SymbolicExpression::Add { x, y, .. }
+        | SymbolicExpression::Sub { x, y, .. }
+        | SymbolicExpression::Mul { x, y, .. } => {
+            build_dotviz_graph(x, Some(current_id), output, counter);
+            build_dotviz_graph(y, Some(current_id), output, counter);
         }
+        SymbolicExpression::Neg { x, .. } => {
+            build_dotviz_graph(x, Some(current_id), output, counter);
+        }
+        _ => {}
     }
 }
+
+// fn build_constraints_graph<F: Field>(constraints: &Vec<SymbolicExpression<F>>) {
+//     let mut i = 0;
+//     let mut output = String::new();
+//     constraints.iter().for_each(|constraint| {
+//         let parent_string = format!("Constraint {i}");
+//         let mut constraint_output = String::new();
+//         build_dotviz_graph(constraint, Some(&parent_string), &mut constraint_output);
+//         i += 1;
+//         output.push_str(&constraint_output)
+//     });
+// }
 
 fn main() {
     let num_steps = 8; // Choose the number of Fibonacci steps
@@ -166,10 +157,9 @@ fn main() {
     type Val = Mersenne31;
     let constraints = get_symbolic_constraints::<Val, FibonacciAir>(&air, 2, 0);
 
-    // let mut n = 1;
-    // let k = constraints.iter().next();
     let mut output_string = String::new();
-    build_dotviz_graph(&constraints[0], None, &mut output_string);
+    let mut counter = 0;
+    build_dotviz_graph(&constraints[0], None, &mut output_string, &mut counter);
     println!("{}", output_string);
 
     fs::write("./constraints.gv", output_string).expect("File write should work.");
