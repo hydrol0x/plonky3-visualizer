@@ -1,27 +1,12 @@
 // Code courtesy of https://github.com/BrianSeong99/Plonky3_Fibonacci.git
-use std::fmt::Debug;
-use std::marker::PhantomData;
-
 use p3_air::{Air, AirBuilder, BaseAir};
 use p3_field::{Field, PrimeCharacteristicRing};
 use p3_matrix::dense::RowMajorMatrix;
 use p3_matrix::Matrix;
-
-use p3_challenger::{HashChallenger, SerializingChallenger32};
-use p3_circle::CirclePcs;
-use p3_commit::ExtensionMmcs;
-use p3_field::extension::BinomialExtensionField;
-use p3_fri::FriConfig;
-use p3_keccak::Keccak256Hash;
-use p3_merkle_tree::MerkleTreeMmcs;
 use p3_mersenne_31::Mersenne31;
-use p3_symmetric::{CompressionFunctionFromHasher, SerializingHasher};
-use p3_uni_stark::{prove, verify, StarkConfig};
-use tracing_forest::util::LevelFilter;
-use tracing_forest::ForestLayer;
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::{EnvFilter, Registry};
+use p3_uni_stark::{get_symbolic_constraints, SymbolicExpression, SymbolicVariable};
+
+mod visualizer;
 
 pub struct FibonacciAir {
     pub num_steps: usize,
@@ -42,29 +27,27 @@ impl<AB: AirBuilder> Air<AB> for FibonacciAir {
 
         // Enforce starting values
         builder.when_first_row().assert_eq(local[0], AB::Expr::ZERO);
-        builder.when_first_row().assert_eq(local[1], AB::Expr::ONE);
+        // builder.when_first_row().assert_eq(local[1], AB::Expr::ONE);
 
         // Enforce state transition constraints
-        builder.when_transition().assert_eq(next[0], local[1]);
-        builder
-            .when_transition()
-            .assert_eq(next[1], local[0] + local[1]);
+        // builder.when_transition().assert_eq(next[0], local[1]);
+        // builder
+        //     .when_transition()
+        //     .assert_eq(next[1], local[0] + local[1]);
 
-        // Constrain the final value
-        let final_value = AB::Expr::from_u32(self.final_value);
-        builder.when_last_row().assert_eq(local[1], final_value);
+        // // Constrain the final value
+        // let final_value = AB::Expr::from_u32(self.final_value);
+        // builder.when_last_row().assert_eq(local[1], final_value);
     }
 }
 
 pub fn generate_fibonacci_trace<F: Field>(num_steps: usize) -> RowMajorMatrix<F> {
-    println!("Generating fib trace");
     let mut values = Vec::with_capacity(num_steps * 2);
     let mut a = F::ZERO;
     let mut b = F::ONE;
     for _ in 0..num_steps {
         values.push(a);
         values.push(b);
-        println!("Pushing a:{a}\n Pushing b:{b}");
         let c = a + b;
         a = b;
         b = c;
@@ -72,63 +55,139 @@ pub fn generate_fibonacci_trace<F: Field>(num_steps: usize) -> RowMajorMatrix<F>
     RowMajorMatrix::new(values, 2)
 }
 
-fn main() -> Result<(), impl Debug> {
-    let env_filter = EnvFilter::builder()
-        .with_default_directive(LevelFilter::INFO.into())
-        .from_env_lossy();
+fn traverse_constraints_tree<F: Field>(
+    root_constraint: &SymbolicExpression<F>,
+    parent_string: Option<&String>,
+    output: &mut String,
+) {
+    match root_constraint {
+        SymbolicExpression::Variable(v) => match *v {
+            SymbolicVariable { entry, index, .. } => {
+                let entry_text: String = match entry {
+                    p3_uni_stark::Entry::Preprocessed { offset } => {
+                        format!("Preprocessed(offset:{}, index:{})", offset, index)
+                    }
+                    p3_uni_stark::Entry::Main { offset } => {
+                        format!("Preprocessed(offset:{}, index:{})", offset, index)
+                    }
+                    p3_uni_stark::Entry::Permutation { offset } => {
+                        format!("Preprocessed(offset:{}, index:{})", offset, index)
+                    }
+                    p3_uni_stark::Entry::Public => String::from("Public"),
+                    p3_uni_stark::Entry::Challenge => String::from("Entry"),
+                };
 
-    Registry::default()
-        .with(env_filter)
-        .with(ForestLayer::default())
-        .init();
+                output.push_str(
+                    format!(
+                        "\"{}\" -> \"{}\"",
+                        parent_string.unwrap_or(&String::default()),
+                        entry_text
+                    )
+                    .as_str(),
+                )
+            }
+        },
+        SymbolicExpression::IsFirstRow => output.push_str(
+            format!(
+                "\"{}\" -> \"IsFirstRow\"",
+                parent_string.unwrap_or(&String::default()),
+            )
+            .as_str(),
+        ),
+        SymbolicExpression::IsLastRow => output.push_str(
+            format!(
+                "\"{}\" -> \"IsLastRow\"",
+                parent_string.unwrap_or(&String::default()),
+            )
+            .as_str(),
+        ),
+        SymbolicExpression::IsTransition => output.push_str(
+            format!(
+                "\"{}\" -> \"IsTransition\"",
+                parent_string.unwrap_or(&String::default()),
+            )
+            .as_str(),
+        ),
+        SymbolicExpression::Constant(c) => output.push_str(
+            format!(
+                "\"{}\" -> \"Const({})\"",
+                parent_string.unwrap_or(&String::default()),
+                c
+            )
+            .as_str(),
+        ),
+        SymbolicExpression::Mul {
+            x,
+            y,
+            degree_multiple,
+        } => {
+            output.push_str(
+                format!(
+                    "\"{}\" -> \"Mul\"",
+                    parent_string.unwrap_or(&String::default()),
+                )
+                .as_str(),
+            );
+            traverse_constraints_tree(x, Some(&String::from("Mul")), output);
+            traverse_constraints_tree(y, Some(&String::from("Mul")), output);
+        }
+        SymbolicExpression::Sub {
+            x,
+            y,
+            degree_multiple,
+        } => {}
+        SymbolicExpression::Add {
+            x,
+            y,
+            degree_multiple,
+        } => {}
+        SymbolicExpression::Neg { x, degree_multiple } => {}
+    }
+}
 
-    type Val = Mersenne31;
-    type Challenge = BinomialExtensionField<Val, 3>;
-
-    type ByteHash = Keccak256Hash;
-    type FieldHash = SerializingHasher<ByteHash>;
-    let byte_hash = ByteHash {};
-    let field_hash = FieldHash::new(Keccak256Hash {});
-
-    type MyCompress = CompressionFunctionFromHasher<ByteHash, 2, 32>;
-    let compress = MyCompress::new(byte_hash);
-
-    type ValMmcs = MerkleTreeMmcs<Val, u8, FieldHash, MyCompress, 32>;
-    let val_mmcs = ValMmcs::new(field_hash, compress);
-
-    type ChallengeMmcs = ExtensionMmcs<Val, Challenge, ValMmcs>;
-    let challenge_mmcs = ChallengeMmcs::new(val_mmcs.clone());
-
-    type Challenger = SerializingChallenger32<Val, HashChallenger<u8, ByteHash, 32>>;
-
-    let fri_config = FriConfig {
-        log_blowup: 1,
-        num_queries: 100,
-        proof_of_work_bits: 16,
-        mmcs: challenge_mmcs,
-        log_final_poly_len: 1,
-    };
-
-    type Pcs = CirclePcs<Val, ValMmcs, ChallengeMmcs>;
-    let pcs = Pcs {
-        mmcs: val_mmcs,
-        fri_config,
-        _phantom: PhantomData,
-    };
-
-    type MyConfig = StarkConfig<Pcs, Challenge, Challenger>;
-    let challenger = Challenger::from_hasher(vec![], byte_hash);
-    let config = MyConfig::new(pcs, challenger);
-
+fn main() {
     let num_steps = 8; // Choose the number of Fibonacci steps
     let final_value = 21; // Choose the final Fibonacci value
     let air = FibonacciAir {
         num_steps,
         final_value,
     };
-    let trace = generate_fibonacci_trace::<Val>(num_steps);
-    println!("Fib trace {:?}", trace);
-    let proof = prove(&config, &air, trace, &vec![]);
 
-    verify(&config, &air, &proof, &vec![])
+    type Val = Mersenne31;
+    let constraints = get_symbolic_constraints::<Val, FibonacciAir>(&air, 2, 0);
+
+    let mut n = 1;
+    let k = constraints.iter().next();
+    let output = constraints.iter().for_each(|constraint| {
+        println!("Constraint {n}: {:#?}\n", constraint);
+
+        match constraint {
+            SymbolicExpression::Variable(v) => match *v {
+                SymbolicVariable { entry, index, .. } => {}
+            },
+            SymbolicExpression::IsFirstRow => {}
+            SymbolicExpression::IsLastRow => {}
+            SymbolicExpression::IsTransition => {}
+            SymbolicExpression::Constant(c) => {}
+            SymbolicExpression::Mul {
+                x,
+                y,
+                degree_multiple,
+            } => {}
+            SymbolicExpression::Sub {
+                x,
+                y,
+                degree_multiple,
+            } => {}
+            SymbolicExpression::Add {
+                x,
+                y,
+                degree_multiple,
+            } => {}
+            SymbolicExpression::Neg { x, degree_multiple } => {}
+        }
+    });
+
+    // verify(&config, &air, &proof, &vec![])
 }
+
