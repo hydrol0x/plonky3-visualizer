@@ -26,8 +26,12 @@ Corresponding to these constraints:
         builder.when_last_row().assert_eq(local[1], final_value); // Constraint 5
 
 ```
-# Usage
+# Installation
 
 If cargo is installed, run `cargo run` or `cargo build` inside the project directory to install and build dependencies. This project also relies on the [Graphviz]((https://graphviz.org/download/)) CLI to compile the Graphviz source into `.svg` files. 
 
 Alternatively, you can paste the generated `.gv` source into an online visalizer like [this one](https://dreampuf.github.io/GraphvizOnline)
+
+# Usage
+
+`main.rs` contains some premade constraints (the fibonacci constraints above) and will visualize these constraints as well as automatically compile the generated `.gv` source to an svg file. 
