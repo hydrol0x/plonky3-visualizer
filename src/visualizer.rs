@@ -1,8 +1,6 @@
 use p3_field::Field;
 use p3_uni_stark::{Entry, SymbolicExpression, SymbolicVariable};
 
-use p3_air::{Air, AirBuilder, BaseAir};
-use p3_uni_stark::get_symbolic_constraints;
 fn build_dotviz_graph<F: Field>(
     node: &SymbolicExpression<F>,
     parent_id: Option<usize>,

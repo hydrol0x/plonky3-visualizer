@@ -10,7 +10,6 @@ use std::io::ErrorKind;
 use std::process::Command;
 
 mod visualizer;
-use visualizer::build_constraints_graph;
 
 pub struct FibonacciAir {
     pub num_steps: usize,
@@ -72,7 +71,6 @@ fn main() {
     let constraints = get_symbolic_constraints::<Val, FibonacciAir>(&air, 2, 0);
 
     let dotgraph = visualizer::build_constraints_graph(&constraints);
-    println!("{}", dotgraph);
 
     let filename_gv = "./constraints.gv";
     let filename_svg = "./constraints.svg";
